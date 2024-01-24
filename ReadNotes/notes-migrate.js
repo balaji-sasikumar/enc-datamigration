@@ -3,49 +3,57 @@ let CryptoJS = require("crypto-js");
 const mongoose = require("mongoose");
 let connectionString = require("../config").connectionString;
 let fs = require("fs");
+const main = require("./filemigrate-new");
 let questions = [
   {
     type: "input",
     name: "oldSharedKey",
-    message: "Enter your shared key",
+    message: "Enter your old shared key",
   },
   {
     type: "input",
     name: "newSharedKey",
-    message: "Enter your shared key",
+    message: "Enter your new shared key",
   },
 ];
+let users = {
+  "61482e82096e18002fb74008": {
+    oldPrivateKey: "123",
+    newPrivateKey: "balaji",
+  },
+
+  "619cbdf9687d5e0031f10dfc": {
+    oldPrivateKey: "123",
+    newPrivateKey: "dinesh",
+  },
+};
 inquirer.prompt(questions).then((answers) => {
+  fs.writeFileSync("noteIds.json", JSON.stringify([]));
   connectToDB(connectionString).then((db) => {
     console.log("connected to db");
-    getNotes(answers.companyId).then((notes) => {
+    getNotes().then(async (notes) => {
       console.log("notes", notes.length);
-      notes = notes.filter((note) => {
+      let sharedNotes = notes.filter((note) => {
         return note.users.length > 0;
       });
-      console.log("shared notes", notes.length);
-      notes.forEach((note) => {
-        if (note.users.length > 0) {
-          decryptNote(note, answers.oldSharedKey).then((decryptedNote) => {
-            if (decryptedNote.invalid) {
-              console.log("invalid note", decryptedNote._id);
-            } else {
-              let noteIds = JSON.parse(fs.readFileSync("noteIds.json"));
-              fs.writeFileSync(
-                "noteIds.json",
-                JSON.stringify(noteIds.concat(decryptedNote._id))
-              );
-              encryptNote(decryptedNote, answers.newSharedKey).then(
-                (encryptedNote) => {
-                  updateNote(note._id, encryptedNote).then(() => {
-                    console.log(`Note ${note._id} encrypted & updated`);
-                  });
-                }
-              );
-            }
-          });
-        }
+      console.log("shared notes", sharedNotes.length);
+      await processNotes(
+        sharedNotes,
+        answers.oldSharedKey,
+        answers.newSharedKey
+      );
+      let privateNotes = notes.filter((note) => {
+        return note.users.length === 0;
       });
+      console.log("private notes", privateNotes.length);
+      for (const userId in users) {
+        await processNotes(
+          privateNotes.filter((note) => note.userid === userId),
+          users[userId].oldPrivateKey,
+          users[userId].newPrivateKey
+        );
+      }
+      console.log("all notes encrypted");
     });
   });
 });
@@ -54,7 +62,15 @@ const connectToDB = async (connectionString) => {
 };
 
 const getNotes = async () => {
-  return await mongoose.connection.db.collection("notes").find({}).toArray();
+  return await mongoose.connection.db
+    .collection("notes")
+    .find({
+      $or: [
+        { userid: { $in: Object.keys(users) } },
+        { users: { $elemMatch: { $in: Object.keys(users) } } },
+      ],
+    })
+    .toArray();
 };
 
 const decryptionAES = (msg, key) => {
@@ -96,4 +112,31 @@ const encryptNote = async (note, key) => {
   note.title = encryptionAES(note.title, key);
   note.details = encryptionAES(note.details, key);
   return note;
+};
+
+const processNotes = async (notes, oldKey, newKey) => {
+  let count = 0;
+  for (const note of notes) {
+    try {
+      const decryptedNote = await decryptNote(note, oldKey);
+
+      if (decryptedNote.invalid) {
+        console.log("Invalid note", decryptedNote._id);
+      } else {
+        const noteIds = JSON.parse(fs.readFileSync("noteIds.json"));
+        fs.writeFileSync(
+          "noteIds.json",
+          JSON.stringify(noteIds.concat(decryptedNote._id))
+        );
+
+        const encryptedNote = await encryptNote(decryptedNote, newKey);
+        await updateNote(note._id, encryptedNote);
+        await main(note._id, oldKey, newKey);
+        count++;
+        console.log(`Note ${note._id} encrypted & updated ${count}`);
+      }
+    } catch (error) {
+      console.error("Error processing note:", error);
+    }
+  }
 };

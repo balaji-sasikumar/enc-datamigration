@@ -142,9 +142,3 @@ const decryptionAES = (msg, key) => {
     return "badformat";
   }
 };
-
-// let test = decryptionAES(
-//   "U2FsdGVkX18iIFZHADX4Xl89Hek/y0hDmNRLmu3w===",
-//   "What is your nameq"
-// );
-// console.log(test);
