@@ -37,22 +37,21 @@ inquirer.prompt(questions).then((answers) => {
         return note.users.length > 0;
       });
       console.log("shared notes", sharedNotes.length);
-      await processNotes(
-        sharedNotes,
-        answers.oldSharedKey,
-        answers.newSharedKey
-      );
       let privateNotes = notes.filter((note) => {
         return note.users.length === 0;
       });
-      console.log("private notes", privateNotes.length);
-      for (const userId in users) {
-        await processNotes(
-          privateNotes.filter((note) => note.userid === userId),
-          users[userId].oldPrivateKey,
-          users[userId].newPrivateKey
-        );
-      }
+
+      await Promise.all([
+        processNotes(sharedNotes, answers.oldSharedKey, answers.newSharedKey),
+        ...Object.keys(users).map((userId) =>
+          processNotes(
+            privateNotes.filter((note) => note.userid === userId),
+            users[userId].oldPrivateKey,
+            users[userId].newPrivateKey
+          )
+        ),
+      ]);
+
       console.log("all notes encrypted");
     });
   });
