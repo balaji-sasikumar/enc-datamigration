@@ -1,0 +1,7 @@
+- [ ] get the list of all the files in the source file share
+- [ ] convert the result into an object with structure `{directory: <directory-name>,fileName: <file-name>}`
+- [ ] for each file in the object get the fileclient
+- [ ] using that fileclient, download the filecontent as string
+- [ ] convert the filecontent into a encrypted string
+- [ ] and compress it using zlib
+- [ ] upload the compressed and encrypted filecontent to the same file share
