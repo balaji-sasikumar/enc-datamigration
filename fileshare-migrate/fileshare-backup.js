@@ -3,7 +3,7 @@ import { ShareServiceClient } from "@azure/storage-file-share";
 const backupFolder = "backup"; // folder name which we have already created in the file share
 let fileObjects = [];
 
-const connStr = require("./config").connectionString;
+const connStr = require("../config").storageCon;
 
 const shareName = "migration-test";
 
