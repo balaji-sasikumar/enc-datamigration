@@ -14,7 +14,7 @@ const chunkSize = 10 * 1024 * 1024;
 const chunkSeparator = "###"; // Unique separator
 
 const key = "Test@1234";
-const connStr = require("./config").connectionString;
+const connStr = require("../config").storageCon;
 const shareName = "migration-test"; // Name of the share to migrate
 
 let fileObjects = [];
