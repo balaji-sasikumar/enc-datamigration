@@ -14,8 +14,10 @@ const chunkSize = 10 * 1024 * 1024;
 const chunkSeparator = "###"; // Unique separator
 
 const key = "Test@1234";
-const connStr = require("../config").storageCon;
-const shareName = "migration-test"; // Name of the share to migrate
+const connStr = "";
+
+const fromFileshare = "source-fileshare";
+const toFileshare = "to-share";
 
 let fileObjects = [];
 
@@ -35,7 +37,7 @@ const listFilesInShare = async (shareName) => {
           );
         } else {
           if (item.name.startsWith("._") || item.name == ".DS_Store") {
-            deleteFile(folderPath, item.name);
+            // deleteFile(folderPath, item.name);
             continue; // Skip files starting with "._"
           }
           fileObjects.push({
@@ -51,7 +53,7 @@ const listFilesInShare = async (shareName) => {
   }
 };
 
-listFilesInShare(shareName);
+listFilesInShare(fromFileshare);
 
 async function streamToBuffer(readableStream) {
   return new Promise((resolve, reject) => {
@@ -68,7 +70,7 @@ async function streamToBuffer(readableStream) {
 
 const downloadFile = async (directory, fileName) => {
   const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
-  const shareClient = shareServiceClient.getShareClient(shareName);
+  const shareClient = shareServiceClient.getShareClient(fromFileshare);
   const directoryClient = shareClient.getDirectoryClient(directory);
   const fileClient = directoryClient.getFileClient(fileName);
   let mimeType = mime.getType(fileName);
@@ -85,21 +87,33 @@ const convertToDataUrl = (content, mimeType) => {
 
 const uploadFile = async (directory, fileName, filePath) => {
   const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
-  const shareClient = shareServiceClient.getShareClient(shareName);
+  const shareClient = shareServiceClient.getShareClient(toFileshare);
+  await createBackupFolder(directory);
   const directoryClient = shareClient.getDirectoryClient(directory);
   const fileClient = directoryClient.getFileClient(fileName);
   const uploadResponse = await fileClient.uploadFile(filePath);
   return uploadResponse;
 };
 
-const deleteFile = async (directory, fileName) => {
+const createBackupFolder = async (folder) => {
   const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
-  const shareClient = shareServiceClient.getShareClient(shareName);
-  const directoryClient = shareClient.getDirectoryClient(directory);
-  const fileClient = directoryClient.getFileClient(fileName);
-  const deleteResponse = await fileClient.deleteIfExists();
-  return deleteResponse;
+  const shareClient = shareServiceClient.getShareClient(toFileshare);
+  const directoryClient = shareClient.getDirectoryClient(folder);
+  try {
+    await directoryClient.createIfNotExists();
+  } catch (error) {
+    console.log(error);
+  }
 };
+
+// const deleteFile = async (directory, fileName) => {
+//   const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
+//   const shareClient = shareServiceClient.getShareClient(shareName);
+//   const directoryClient = shareClient.getDirectoryClient(directory);
+//   const fileClient = directoryClient.getFileClient(fileName);
+//   const deleteResponse = await fileClient.deleteIfExists();
+//   return deleteResponse;
+// };
 
 const encryptFile = (fileDataUrl, key) => {
   const encryptedChunks = [];
@@ -165,6 +179,5 @@ setTimeout(async () => {
     );
     unlinkSync(encryptedPath);
     unlinkSync(compressedPath);
-    await deleteFile(fileObject.directory, fileObject.fileName);
   }
 }, 2000);
