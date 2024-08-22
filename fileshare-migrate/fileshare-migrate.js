@@ -88,7 +88,7 @@ const convertToDataUrl = (content, mimeType) => {
 const uploadFile = async (directory, fileName, filePath) => {
   const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
   const shareClient = shareServiceClient.getShareClient(toFileshare);
-  await createBackupFolder(directory);
+  if (directory !== "") await createBackupFolder(directory);
   const directoryClient = shareClient.getDirectoryClient(directory);
   const fileClient = directoryClient.getFileClient(fileName);
   const uploadResponse = await fileClient.uploadFile(filePath);
@@ -98,11 +98,20 @@ const uploadFile = async (directory, fileName, filePath) => {
 const createBackupFolder = async (folder) => {
   const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
   const shareClient = shareServiceClient.getShareClient(toFileshare);
-  const directoryClient = shareClient.getDirectoryClient(folder);
+
+  const folderParts = folder.split("/");
+  let currentPath = "";
+
+  for (const part of folderParts) {
+    currentPath = currentPath ? `${currentPath}/${part}` : part;
+    const directoryClient = shareClient.getDirectoryClient(currentPath);
+
   try {
     await directoryClient.createIfNotExists();
   } catch (error) {
-    console.log(error);
+      console.log(`Error creating directory ${currentPath}:`, error);
+      break; // stop creating further directories if an error occurs
+    }
   }
 };
 
@@ -157,12 +166,37 @@ const compressFile = async (inputFilePath, outputFilePath) => {
   });
 };
 
+const checkIfFileExists = async (directory, fileName) => {
+  const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
+  const shareClient = shareServiceClient.getShareClient(toFileshare);
+  const directoryClient = shareClient.getDirectoryClient(directory);
+  const fileClient = directoryClient.getFileClient(fileName);
+  const exists = await fileClient.exists();
+  return exists;
+};
+
 setTimeout(async () => {
   mkdirSync("EncryptedFiles", { recursive: true });
   mkdirSync("CompressedFiles", { recursive: true });
 
   for (const fileObject of fileObjects) {
-    let content = await downloadFile(fileObject.directory, fileObject.fileName);
+    try {
+      if (
+        await checkIfFileExists(
+          fileObject.directory,
+          fileObject.fileName + ".txt.gz"
+        )
+      ) {
+        console.log(
+          "File already exists: ",
+          fileObject.directory + "/" + fileObject.fileName
+        );
+        continue;
+      }
+      let content = await downloadFile(
+        fileObject.directory,
+        fileObject.fileName
+      );
     let encryptedContent = encryptFile(content, key);
     let encryptedPath = "EncryptedFiles/" + fileObject.fileName + ".txt";
     writeFileSync(encryptedPath, encryptedContent);
@@ -179,5 +213,8 @@ setTimeout(async () => {
     );
     unlinkSync(encryptedPath);
     unlinkSync(compressedPath);
+    } catch (error) {
+      console.log(error, fileObject);
+    }
   }
 }, 2000);
