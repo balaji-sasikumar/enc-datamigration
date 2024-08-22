@@ -1,16 +1,10 @@
 import { ShareServiceClient } from "@azure/storage-file-share";
-import {
-  writeFileSync,
-  createReadStream,
-  createWriteStream,
-  unlinkSync,
-  mkdirSync,
-} from "fs";
+import { createReadStream, createWriteStream, unlinkSync, mkdirSync } from "fs";
 import { AES } from "crypto-ts";
 import { createGzip } from "zlib";
 import mime from "mime";
 
-const chunkSize = 10 * 1024 * 1024;
+const chunkSize = 3 * 1024 * 1024;
 const chunkSeparator = "###"; // Unique separator
 
 const key = "Test@1234";
@@ -55,47 +49,39 @@ const listFilesInShare = async (shareName) => {
 
 listFilesInShare(fromFileshare);
 
-async function streamToBuffer(readableStream) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    readableStream.on("data", (data) => {
-      chunks.push(data instanceof Buffer ? data : Buffer.from(data));
-    });
-    readableStream.on("end", () => {
-      resolve(Buffer.concat(chunks));
-    });
-    readableStream.on("error", reject);
-  });
-}
-
 const downloadFile = async (directory, fileName) => {
+  console.log("Downloading file: ", fileName);
   const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
   const shareClient = shareServiceClient.getShareClient(fromFileshare);
   const directoryClient = shareClient.getDirectoryClient(directory);
   const fileClient = directoryClient.getFileClient(fileName);
-  let mimeType = mime.getType(fileName);
   const downloadResponse = await fileClient.download();
-  let base64String = (
-    await streamToBuffer(downloadResponse.readableStreamBody)
-  ).toString("base64");
-  return convertToDataUrl(base64String, mimeType);
-};
-
-const convertToDataUrl = (content, mimeType) => {
-  return `data:${mimeType};base64,${content}`;
+  mkdirSync("Downloads", { recursive: true });
+  const readStream = downloadResponse.readableStreamBody;
+  const writeStream = createWriteStream(`Downloads/${fileName}`);
+  readStream.pipe(writeStream);
+  return new Promise((resolve, reject) => {
+    writeStream.on("finish", () => {
+      console.log("File downloaded: ", directory + "/" + fileName);
+      resolve();
+    });
+    writeStream.on("error", reject);
+  });
 };
 
 const uploadFile = async (directory, fileName, filePath) => {
   const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
   const shareClient = shareServiceClient.getShareClient(toFileshare);
-  if (directory !== "") await createBackupFolder(directory);
+  if (directory !== "") await createParentFolder(directory);
   const directoryClient = shareClient.getDirectoryClient(directory);
   const fileClient = directoryClient.getFileClient(fileName);
-  const uploadResponse = await fileClient.uploadFile(filePath);
+  const uploadResponse = await fileClient.uploadFile(filePath, {
+    metadata: { stream: "true" },
+  });
   return uploadResponse;
 };
 
-const createBackupFolder = async (folder) => {
+const createParentFolder = async (folder) => {
   const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
   const shareClient = shareServiceClient.getShareClient(toFileshare);
 
@@ -115,31 +101,6 @@ const createBackupFolder = async (folder) => {
   }
 };
 
-// const deleteFile = async (directory, fileName) => {
-//   const shareServiceClient = ShareServiceClient.fromConnectionString(connStr);
-//   const shareClient = shareServiceClient.getShareClient(shareName);
-//   const directoryClient = shareClient.getDirectoryClient(directory);
-//   const fileClient = directoryClient.getFileClient(fileName);
-//   const deleteResponse = await fileClient.deleteIfExists();
-//   return deleteResponse;
-// };
-
-const encryptFile = (fileDataUrl, key) => {
-  const encryptedChunks = [];
-  const totalChunks = Math.ceil(fileDataUrl.length / chunkSize);
-
-  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-    const start = chunkIndex * chunkSize;
-    const end = start + chunkSize;
-    const chunk = fileDataUrl.substring(start, end);
-
-    const encChunk = encryptionAES(chunk, key);
-    encryptedChunks.push(encChunk);
-  }
-
-  const joinedEncryptedData = encryptedChunks.join(chunkSeparator);
-  return joinedEncryptedData;
-};
 const encryptionAES = (msg, key) => {
   if (msg && key) {
     return AES.encrypt(msg, key).toString();
@@ -175,6 +136,54 @@ const checkIfFileExists = async (directory, fileName) => {
   return exists;
 };
 
+const encryptAndSaveFile = async (fromPath, toPath, key) => {
+  try {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log("Encrypting file: ", fromPath);
+        const readStream = createReadStream(fromPath, {
+          highWaterMark: chunkSize,
+        });
+        const writeStream = createWriteStream(toPath);
+        let firstChunk = true;
+        let encChunk, chunkToEncrypt;
+        readStream.on("data", (chunk) => {
+          readStream.pause();
+          if (firstChunk) {
+            chunkToEncrypt = `data:${mime.getType(
+              fromPath
+            )};base64,${chunk.toString("base64")}`;
+            firstChunk = false;
+          } else {
+            chunkToEncrypt = chunk.toString("base64");
+          }
+          encChunk = encryptionAES(chunkToEncrypt, key);
+          writeStream.write(encChunk + chunkSeparator, () => {
+            readStream.resume();
+          });
+        });
+
+        readStream.on("end", () => {
+          writeStream.end();
+          resolve();
+        });
+
+        readStream.on("error", (error) => {
+          reject(error);
+        });
+
+        writeStream.on("error", (error) => {
+          reject(error);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  } catch (err) {
+    console.error("Error writing file:", err);
+  }
+};
+
 setTimeout(async () => {
   mkdirSync("EncryptedFiles", { recursive: true });
   mkdirSync("CompressedFiles", { recursive: true });
@@ -193,13 +202,13 @@ setTimeout(async () => {
         );
         continue;
       }
-      let content = await downloadFile(
-        fileObject.directory,
-        fileObject.fileName
-      );
-    let encryptedContent = encryptFile(content, key);
+      await downloadFile(fileObject.directory, fileObject.fileName);
     let encryptedPath = "EncryptedFiles/" + fileObject.fileName + ".txt";
-    writeFileSync(encryptedPath, encryptedContent);
+      await encryptAndSaveFile(
+        `Downloads/${fileObject.fileName}`,
+        encryptedPath,
+        key
+      );
     let compressedPath = "CompressedFiles/" + fileObject.fileName + ".txt.gz";
     await compressFile(encryptedPath, compressedPath);
     await uploadFile(
@@ -211,6 +220,7 @@ setTimeout(async () => {
       "File uploaded: ",
       fileObject.directory + "/" + fileObject.fileName
     );
+      unlinkSync(`Downloads/${fileObject.fileName}`);
     unlinkSync(encryptedPath);
     unlinkSync(compressedPath);
     } catch (error) {
