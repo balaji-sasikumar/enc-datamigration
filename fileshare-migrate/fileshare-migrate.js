@@ -92,9 +92,9 @@ const createParentFolder = async (folder) => {
     currentPath = currentPath ? `${currentPath}/${part}` : part;
     const directoryClient = shareClient.getDirectoryClient(currentPath);
 
-  try {
-    await directoryClient.createIfNotExists();
-  } catch (error) {
+    try {
+      await directoryClient.createIfNotExists();
+    } catch (error) {
       console.log(`Error creating directory ${currentPath}:`, error);
       break; // stop creating further directories if an error occurs
     }
@@ -203,26 +203,26 @@ setTimeout(async () => {
         continue;
       }
       await downloadFile(fileObject.directory, fileObject.fileName);
-    let encryptedPath = "EncryptedFiles/" + fileObject.fileName + ".txt";
+      let encryptedPath = "EncryptedFiles/" + fileObject.fileName + ".txt";
       await encryptAndSaveFile(
         `Downloads/${fileObject.fileName}`,
         encryptedPath,
         key
       );
-    let compressedPath = "CompressedFiles/" + fileObject.fileName + ".txt.gz";
-    await compressFile(encryptedPath, compressedPath);
-    await uploadFile(
-      fileObject.directory,
-      fileObject.fileName + ".txt.gz",
-      compressedPath
-    );
-    console.log(
-      "File uploaded: ",
-      fileObject.directory + "/" + fileObject.fileName
-    );
+      let compressedPath = "CompressedFiles/" + fileObject.fileName + ".txt.gz";
+      await compressFile(encryptedPath, compressedPath);
+      await uploadFile(
+        fileObject.directory,
+        fileObject.fileName + ".txt.gz",
+        compressedPath
+      );
+      console.log(
+        "File uploaded: ",
+        fileObject.directory + "/" + fileObject.fileName
+      );
       unlinkSync(`Downloads/${fileObject.fileName}`);
-    unlinkSync(encryptedPath);
-    unlinkSync(compressedPath);
+      unlinkSync(encryptedPath);
+      unlinkSync(compressedPath);
     } catch (error) {
       console.log(error, fileObject);
     }
