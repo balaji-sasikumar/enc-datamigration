@@ -16,17 +16,18 @@ let questions = [
     message: "Enter your new shared key",
   },
 ];
-let users = {
-  "61482e82096e18002fb74008": {
-    oldPrivateKey: "123",
-    newPrivateKey: "balaji",
-  },
+// let users = {
+//   "61482e82096e18002fb74008": {
+//     oldPrivateKey: "123",
+//     newPrivateKey: "balaji",
+//   },
 
-  "619cbdf9687d5e0031f10dfc": {
-    oldPrivateKey: "123",
-    newPrivateKey: "dinesh",
-  },
-};
+//   "619cbdf9687d5e0031f10dfc": {
+//     oldPrivateKey: "123",
+//     newPrivateKey: "dinesh",
+//   },
+// };
+let users = {};
 inquirer.prompt(questions).then((answers) => {
   fs.writeFileSync("noteIds.json", JSON.stringify([]));
   connectToDB(connectionString).then((db) => {

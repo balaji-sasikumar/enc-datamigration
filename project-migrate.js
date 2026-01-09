@@ -1,6 +1,7 @@
 const inquirer = require("inquirer");
 let CryptoJS = require("crypto-js");
 const mongoose = require("mongoose");
+// const { main, backupContainer } = require("./ReadNotes/filemigrate-new");
 let connectionString = require("./config").connectionString;
 let questions = [
   {
@@ -24,26 +25,25 @@ inquirer.prompt(questions).then((answers) => {
   let oldKey = answers.OldKey;
   let newKey = answers.NewKey;
   count = 0;
-  connectToDB(connectionString).then((db) => {
+  connectToDB(connectionString).then(async () => {
     console.log("connected to db");
-    getProjects(answers.companyId).then((projects) => {
-      console.log("projects", projects.length);
-      projects.forEach((project) => {
-        decryptProject(project, oldKey).then((project) => {
-          count++;
-          if (!project.invalid) {
-            delete project.invalid;
-            encryptProject(project, newKey).then((encryptedProject) => {
-              updateProject(project._id, encryptedProject).then(() => {
-                console.log(`Project ${count} encrypted & updated`);
-              });
-            });
-          } else {
-            console.log(`Project ${count} is invalid`);
-          }
-        });
-      });
-    });
+    const projects = await getProjects(answers.companyId);
+    await backupProjects(projects);
+    console.log("projects", projects.length);
+    for (const project of projects) {
+      const decryptedProject = await decryptProject(project, oldKey);
+      count++;
+      if (!decryptedProject.invalid) {
+        delete decryptedProject.invalid;
+        const encryptedProject = await encryptProject(decryptedProject, newKey);
+        await updateProject(decryptedProject._id, encryptedProject);
+        // await backupContainer(project._id);
+        // await main(project._id, oldKey, newKey);
+        console.log(`Project ${count} encrypted & updated`);
+      } else {
+        console.log(`Project ${count} is invalid`);
+      }
+    }
   });
 });
 
@@ -58,6 +58,16 @@ const getProjects = async (companyId) => {
       companyid: companyId,
     })
     .toArray();
+};
+
+const backupProjects = async (projects) => {
+  const backupCollection = mongoose.connection.db.collection("projects_backup");
+  await backupCollection.insertMany(
+    projects.map((p) => ({
+      ...p,
+      _backupAt: new Date(),
+    }))
+  );
 };
 
 const updateProject = async (projectId, project) => {

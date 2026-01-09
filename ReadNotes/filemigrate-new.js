@@ -58,14 +58,41 @@ const encryptFile = (fileDataUrl, key) => {
   return joinedEncryptedData;
 };
 
+const backupContainer = async (containerName) => {
+  containerName = containerName.toString();
+  const source = blobServiceClient.getContainerClient(containerName);
+  const target = blobServiceClient.getContainerClient(
+    `${containerName}-backup`
+  );
+
+  await target.createIfNotExists();
+
+  for await (const blob of source.listBlobsFlat()) {
+    const sourceBlob = source.getBlobClient(blob.name);
+    const targetBlob = target.getBlobClient(blob.name);
+
+    await targetBlob.beginCopyFromURL(sourceBlob.url);
+  }
+
+  console.log("Backup completed for", containerName);
+};
+
 const main = async (container, oldKey, newKey) => {
   container = container.toString();
   const containerClient = blobServiceClient.getContainerClient(container);
+  const exists = await containerClient.exists();
+  if (!exists) {
+    console.log("Container does not exist. Skipping:", container);
+    return;
+  }
+
   for await (const blob of containerClient.listBlobsFlat()) {
     console.log("Processing", blob.name);
+
     const blockBlobClient = containerClient.getBlockBlobClient(blob.name);
     const downloadBlockBlobResponse = await blockBlobClient.downloadToBuffer();
     const encryptedContent = downloadBlockBlobResponse.toString();
+
     const encryptedChunks = encryptedContent.split(chunkSeparator);
     const decryptedChunks = [];
     let hasBadformat = false;
@@ -78,15 +105,20 @@ const main = async (container, oldKey, newKey) => {
       }
       decryptedChunks.push(decChunk);
     }
-    const decryptedContent = decryptedChunks.join("");
+
     if (hasBadformat) {
       console.log("Invalid file", blob.name);
     } else {
-      let content = encryptFile(decryptedContent, newKey);
+      const decryptedContent = decryptedChunks.join("");
+      const content = encryptFile(decryptedContent, newKey);
       await overWriteFile(container, blob.name, content);
     }
   }
+
   console.log("done", container);
 };
 
-module.exports = main;
+module.exports = {
+  main,
+  backupContainer,
+};
