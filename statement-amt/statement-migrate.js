@@ -5,8 +5,13 @@ let connectionString = require("./config").connectionString;
 let questions = [
   {
     type: "input",
-    name: "sharedKey",
-    message: "Enter your shared key",
+    name: "oldSharedKey",
+    message: "Enter your Old shared key",
+  },
+  {
+    type: "input",
+    name: "newSharedKey",
+    message: "Enter your New shared key",
   },
   {
     type: "input",
@@ -20,15 +25,7 @@ inquirer.prompt(questions).then((answers) => {
     console.log("connected to db");
     getStatements(answers.companyId).then((statements) => {
       console.log(`Retrieved ${statements.length} statements`);
-      for (let i = 0; i < statements.length; i++) {
-        statements[i].amount = encryptionAES(
-          String(statements[i].amount),
-          answers.sharedKey
-        );
-        updateStatement(statements[i]._id, statements[i].amount).then((res) => {
-          console.log(`Statement ${i + 1} encrypted & updated`, res);
-        });
-      }
+      processStatements(statements, answers.oldSharedKey, answers.newSharedKey);
     });
   });
 });
@@ -51,13 +48,59 @@ const encryptionAES = (msg, key) => {
   }
 };
 
-const updateStatement = async (statementId, amount) => {
+const decryptionAES = (msg, key) => {
+  try {
+    if (msg && key) {
+      const bytes = CryptoJS.AES.decrypt(msg, key);
+      const plaintext = bytes.toString(CryptoJS.enc.Utf8);
+      return plaintext || "badformat";
+    } else {
+      return msg;
+    }
+  } catch (err) {
+    return "badformat";
+  }
+};
+
+const updateStatement = async (statementId, amount, statementName) => {
   await mongoose.connection.db.collection("statements").updateOne(
     { _id: statementId },
     {
       $set: {
         amount: amount,
+        statementName: statementName,
       },
     }
   );
+};
+
+const processStatements = async (statements, oldKey, newKey) => {
+  for (let i = 0; i < statements.length; i++) {
+    const decryptedAmount = decryptionAES(statements[i].amount, oldKey);
+    const decryptedStatementName = decryptionAES(
+      statements[i].statementName,
+      oldKey
+    );
+
+    if (
+      decryptedAmount === "badformat" ||
+      decryptedStatementName === "badformat"
+    ) {
+      console.log(`Statement ${i + 1} has bad format, skipping...`);
+      continue;
+    }
+
+    const reEncryptedAmount = encryptionAES(decryptedAmount, newKey);
+    const reEncryptedStatementName = encryptionAES(
+      decryptedStatementName,
+      newKey
+    );
+
+    await updateStatement(
+      statements[i]._id,
+      reEncryptedAmount,
+      reEncryptedStatementName
+    );
+    console.log(`Statement ${i + 1} re-encrypted & updated`);
+  }
 };
