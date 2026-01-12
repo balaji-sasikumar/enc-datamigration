@@ -28,7 +28,7 @@ inquirer.prompt(questions).then((answers) => {
   connectToDB(connectionString).then(async () => {
     console.log("connected to db");
     const projects = await getProjects(answers.companyId);
-    await backupProjects(projects);
+    // await backupProjects(projects);
     console.log("projects", projects.length);
     for (const project of projects) {
       const decryptedProject = await decryptProject(project, oldKey);
